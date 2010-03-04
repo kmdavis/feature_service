@@ -1,9 +1,6 @@
 {
-  "picard_env": {
-    "root": "/web/feature_service",
-    "mode": "development",
-    "port": 9999
-  },
+  "picard_mode": "development",
+  "picard_port": 9999,
   "feature_file": "features.json",
   "poll_feature_file": 60000
 }

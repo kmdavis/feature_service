@@ -1,12 +1,19 @@
 require.paths.unshift("./lib");
 
 require("picard");
+
 var sys = require("sys");
 var fs = require("fs");
 
 var settings = JSON.parse(fs.readFileSync("settings.json"));
 
-picard.env = settings.picard_env;
+picard.env = {
+  root: __dirname,
+  views: "/views",
+  public_dir: "/public",
+  port: settings.picard_port,
+  mode: settings.picard_mode
+};
 
 picard.start();
 
@@ -52,15 +59,18 @@ var insert_call = function() {
 
 var formatResponse = function(request, data) {
   insert_call();
-  return JSON.stringify({
-    status: 0,
-    msg: "",
-    request: request.url,
-    timestamp: new Date().toString(),
-    nodename: hostname,
-    nodeID: 0,
-    data: data
-  });
+  return {
+    type: "application/json",
+    body: JSON.stringify({
+      status: 0,
+      msg: "",
+      request: request.url,
+      timestamp: new Date().toString(),
+      nodename: hostname,
+      nodeID: 0,
+      data: data
+    })
+  };
 };
 
 var reload = function() {
@@ -104,58 +114,98 @@ var getKey = function(request) {
   if (features.hasOwnProperty(request.key)) {
     return formatResponse(request, {
       key: request.key,
-      values: features[request.key],
+      groups: features[request.key].groups,
+      percent: features[request.key].percent,
       success: true
     });
   }
   return formatResponse(request, {
+    msg: "feature not found",
     success: false
   });
 };
 
-var setKGP = function(request) {
+var newFeature = function(request) {
   if (!features.hasOwnProperty(request.key)) {
-    features[request.key] = [];
-  }
-  for (var i = 0, found = false; i < features[request.key].length; i += 1) {
-    if (features[request.key][i][0] === parseInt(request.group)) {
-      found = true;
-      features[request.key][i][1] = parseInt(request.percent);
-    }
-  }
-  if (!found) {
-    features[request.key].push([parseInt(request.group), parseInt(request.percent)]);
+    features[request.key] = {
+      groups: [],
+      percent: 0
+    };
+    return formatResponse(request, {
+      success: save()
+    });
   }
   return formatResponse(request, {
-    success: save()
+    msg: "feature already exists",
+    success: false
   });
 };
 
-var clearKeyGroup = function(request) {
-  if (!features.hasOwnProperty(request.key)) {
-    for (var i = 0; i < features[request.key].length; i += 1) {
-      if (features[request.key][i][0] === parseInt(request.group)) {
-        features[request.key].splice(i, 1);
+var addGroup = function(request) {
+  if (features.hasOwnProperty(request.key)) {
+    for (var i = 0; i < features[request.key].groups.length; i += 1) {
+      if (features[request.key].groups[i] === parseInt(request.group)) {
+        return formatResponse(request, {
+          msg: "group already exists",
+          success: false
+        });
+      }
+    }
+    features[request.key].groups.push(parseInt(request.group));
+    return formatResponse(request, {
+      success: save()
+    });
+  }
+  return formatResponse(request, {
+    msg: "feature not found",
+    success: false
+  });
+};
+
+var removeGroup = function(request) {
+  if (features.hasOwnProperty(request.key)) {
+    for (var i = 0; i < features[request.key].groups.length; i += 1) {
+      if (features[request.key].groups[i] === parseInt(request.group)) {
+        features[request.key].groups.splice(i, 1);
         return formatResponse(request, {
           success: save()
         });
       }
     }
+    return formatResponse(request, {
+      msg: "group not found",
+      success: false
+    });
   }
   return formatResponse(request, {
+    msg: "feature not found",
+    success: false
+  });
+};
+
+var setPercent = function(request) {
+  if (features.hasOwnProperty(request.key)) {
+    features[request.key].percent = parseInt(request.percent);
+    return formatResponse(request, {
+      success: save()
+    });
+  }
+  return formatResponse(request, {
+    msg: "feature not found",
     success: false
   });
 };
 
 var clearKey = function(request) {
-  if (!features.hasOwnProperty(request.key)) {
+  if (features.hasOwnProperty(request.key)) {
     features[request.key] = null;
     delete features[request.key];
     return formatResponse(request, {
-    success: save()
-  });
+      success: save()
+    });
   }
   return formatResponse(request, {
+    msg: "feature not found",
     success: false
   });
 };
@@ -217,13 +267,28 @@ var stats = function(request) {
   });
 };
 
-get("/list/?", list);
-get("/get/:key/?", getKey);
-get("/set/:key/:group/:percent/?", setKGP);
-get("/clear/:key/:group/?", clearKeyGroup);
-get("/clear/:key/?", clearKey);
-put("/:key/:group/:percent/?", setKGP);
-del("/:key/:group/?", clearKeyGroup);
-del("/:key/?", clearKey);
-get("/service_ping", ping);
-get("/stats", stats);
+get("/features/?", list);
+get("/feature/:key/?", getKey);
+put("/feature/:key/?", newFeature);
+put("/feature/:key/:group/?", addGroup);
+del("/feature/:key/:group/?", removeGroup);
+put("/feature/:key/rollout/:percent/?", setPercent);
+del("/feature/:key/?", clearKey);
+get("/add/:key", newFeature);
+get("/add_group/:key/:group", addGroup);
+get("/remove_group/:key/:group/?", removeGroup);
+get("/set_percent/:key/rollout/:percent/?", setPercent);
+get("/remove/:key/?", clearKey);
+get("/service_ping/?", ping);
+get("/stats/?", stats);
+get("/admin/?", function() {
+  return {
+    template: "admin",
+    features: features
+  };
+});
+put("/refresh/?", function() {
+  return formatResponse(request, {
+    success: reload()
+  });
+});
