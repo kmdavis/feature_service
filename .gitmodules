@@ -1,6 +1,0 @@
-[submodule "vendor/picard"]
-	path = vendor/picard
-	url = git://github.com/dantebronto/picard.git
-[submodule "vendor/haml-js"]
-	path = vendor/haml-js
-	url = git://github.com/creationix/haml-js.git
